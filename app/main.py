@@ -1,5 +1,8 @@
 from fastapi import FastAPI
+from app.database import engine, Base
 from app.routers import sira, hastane
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="MedMap API", version="1.0.0")
 

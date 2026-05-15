@@ -1,38 +1,47 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.sira import Sira
 from datetime import datetime
 
 router = APIRouter(prefix="/sira", tags=["Sıra"])
 
-siralar = {
-    1: {"poliklinik": "Dahiliye", "mevcut_sira": 42, "bekleme_dakika": 15},
-    2: {"poliklinik": "Kardiyoloji", "mevcut_sira": 18, "bekleme_dakika": 7},
-    3: {"poliklinik": "Ortopedi", "mevcut_sira": 63, "bekleme_dakika": 25},
-}
-
-@router.get("/")
-def tum_siralar():
-    return {"siralar": siralar}
-
 @router.get("/{poliklinik_id}")
-def sira_getir(poliklinik_id: int):
-    if poliklinik_id not in siralar:
-        return {"hata": "Poliklinik bulunamadı"}
-    return siralar[poliklinik_id]
+def sira_getir(poliklinik_id: int, db: Session = Depends(get_db)):
+    siralar = db.query(Sira).filter(Sira.poliklinik_id == poliklinik_id).all()
+    toplam = len(siralar)
+    return {
+        "poliklinik_id": poliklinik_id,
+        "toplam_sira": toplam,
+        "tahmini_bekleme": toplam * 4
+    }
 
 @router.post("/{poliklinik_id}/sira-al")
-def sira_al(poliklinik_id: int):
-    if poliklinik_id not in siralar:
-        return {"hata": "Poliklinik bulunamadı"}
+def sira_al(poliklinik_id: int, db: Session = Depends(get_db)):
+    son_sira = db.query(Sira).filter(
+        Sira.poliklinik_id == poliklinik_id
+    ).count()
     
-    siralar[poliklinik_id]["mevcut_sira"] += 1
-    siralar[poliklinik_id]["bekleme_dakika"] += 4
+    yeni_sira = Sira(
+        poliklinik_id=poliklinik_id,
+        sira_no=son_sira + 1,
+        durum="bekliyor",
+        olusturma_zamani=datetime.now()
+    )
     
-    yeni_sira = siralar[poliklinik_id]["mevcut_sira"]
+    db.add(yeni_sira)
+    db.commit()
+    db.refresh(yeni_sira)
     
     return {
         "mesaj": "Sıranız alındı!",
-        "sira_no": yeni_sira,
-        "poliklinik": siralar[poliklinik_id]["poliklinik"],
-        "tahmini_bekleme": siralar[poliklinik_id]["bekleme_dakika"],
+        "sira_no": yeni_sira.sira_no,
+        "poliklinik_id": poliklinik_id,
+        "tahmini_bekleme": yeni_sira.sira_no * 4,
         "saat": datetime.now().strftime("%H:%M")
     }
+
+@router.get("/{poliklinik_id}/liste")
+def sira_listesi(poliklinik_id: int, db: Session = Depends(get_db)):
+    siralar = db.query(Sira).filter(Sira.poliklinik_id == poliklinik_id).all()
+    return {"siralar": siralar}
